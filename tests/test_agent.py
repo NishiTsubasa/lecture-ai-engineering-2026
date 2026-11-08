@@ -8,9 +8,10 @@ TestModel は実際のLLMを呼ばない偽モデルで、登録されたツー�
 from pydantic_ai.messages import ToolCallPart, ToolReturnPart
 from pydantic_ai.models.test import TestModel
 
-from app.agent import agent
+from app import tools
+from app.agent import agent, confirm_deferred_tool_requests
 
-BASE_TOOLS = {"search_glossary", "get_lecture_summary"}
+BASE_TOOLS = {"search_glossary", "get_lecture_summary", "make_quiz"}
 
 
 def _parts(result, kind):
@@ -18,7 +19,7 @@ def _parts(result, kind):
 
 
 def test_base_tools_are_registered_and_called():
-    model = TestModel()
+    model = TestModel(call_tools=sorted(BASE_TOOLS))
     with agent.override(model=model):
         result = agent.run_sync("LoRAとは？")
 
@@ -37,3 +38,37 @@ def test_glossary_result_reaches_the_model():
         result = agent.run_sync("RAGとは？")
     returns = _parts(result, ToolReturnPart)
     assert returns and returns[0].tool_name == "search_glossary"
+
+
+def test_save_learning_log_waits_for_approval_and_resumes(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    model = TestModel(call_tools=["save_learning_log"])
+
+    with agent.override(model=model):
+        pending = agent.run_sync("今日学んだ内容を記録に保存して")
+        assert pending.output.approvals[0].tool_name == "save_learning_log"
+        assert not list(tmp_path.iterdir())
+
+        result = agent.run_sync(
+            message_history=pending.all_messages(),
+            deferred_tool_results=confirm_deferred_tool_requests(pending.output),
+        )
+
+    assert result.output
+    assert len(list(tmp_path.glob("*.md"))) == 1
+
+
+def test_save_learning_log_denial_does_not_create_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    model = TestModel(call_tools=["save_learning_log"])
+
+    with agent.override(model=model):
+        pending = agent.run_sync("今日学んだ内容を記録に保存して")
+        agent.run_sync(
+            message_history=pending.all_messages(),
+            deferred_tool_results=confirm_deferred_tool_requests(pending.output),
+        )
+
+    assert not list(tmp_path.iterdir())
