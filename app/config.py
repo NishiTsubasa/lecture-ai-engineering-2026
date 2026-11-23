@@ -6,6 +6,8 @@ APIキーやモデル名はコードに書かず、環境変数から読み込�
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # 既定モデル。環境変数 AIE_MODEL を設定すると切り替えられる。
 #   例: export AIE_MODEL=gemini-3.5-flash
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
@@ -18,7 +20,7 @@ RAG_TREE = ROOT / "data/rag_data/tree.json"
 RAG_GRAPH = ROOT / "data/rag_data/graph.json"
 RAG_DB = Path(os.getenv("AIE_RAG_DB", str(ROOT / "data/rag_data/index.sqlite3")))
 RAG_DOCUMENT_IDS = ("lec01-main", "lec02-main", "lec03-main")
-RAG_TOP_K = 5
+RAG_TOP_K = 2
 GRAPH_START_K = 3
 GRAPH_HOPS = 2
 GRAPH_MAX_RESULTS = 10
@@ -40,7 +42,8 @@ def api_error_message(status: int, detail: str = "") -> str:
 
 
 def get_api_key() -> str:
-    """環境変数 GEMINI_API_KEY を返す。未設定なら手順を表示して終了する。"""
+    """環境変数かリポジトリ直下の .env からAPIキーを返す。"""
+    load_dotenv(ROOT / ".env")
     key = os.getenv("GEMINI_API_KEY")
     if not key:
         raise SystemExit(
